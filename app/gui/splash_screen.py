@@ -8,6 +8,7 @@ from typing import Callable, Optional
 import customtkinter as ctk
 
 from app.core.config import settings
+from app.gui.branding import load_ctk_image, set_window_icon
 from app.gui.themes import COLORS, heading_font, small_font
 
 
@@ -40,6 +41,8 @@ class SplashScreen(ctk.CTkToplevel):
 
     # ---------------- UI ----------------
     def _build_ui(self) -> None:
+        set_window_icon(self)
+
         container = ctk.CTkFrame(
             self,
             corner_radius=18,
@@ -49,12 +52,16 @@ class SplashScreen(ctk.CTkToplevel):
         )
         container.pack(fill="both", expand=True, padx=20, pady=20)
 
+        logo_img = load_ctk_image(96)
+        if logo_img is not None:
+            ctk.CTkLabel(container, image=logo_img, text="").pack(pady=(36, 4))
+
         ctk.CTkLabel(
             container,
             text="HireFlow AI",
             font=heading_font(),
             text_color=COLORS.text,
-        ).pack(pady=(60, 6))
+        ).pack(pady=(8, 6))
 
         ctk.CTkLabel(
             container,

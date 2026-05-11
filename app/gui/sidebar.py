@@ -8,6 +8,7 @@ import customtkinter as ctk
 
 from app.core.config import settings
 from app.core.constants import GUI_PAGES
+from app.gui.branding import load_ctk_image
 from app.gui.themes import COLORS
 
 
@@ -75,18 +76,30 @@ class Sidebar(ctk.CTkFrame):
     # ---------------- Brand ----------------
     def _build_brand(self) -> None:
         brand_frame = ctk.CTkFrame(self, fg_color="transparent")
-        brand_frame.grid(row=0, column=0, sticky="ew", padx=18, pady=(20, 12))
+        brand_frame.grid(row=0, column=0, sticky="ew", padx=14, pady=(18, 12))
+
+        # Row: logo + wordmark side by side
+        row = ctk.CTkFrame(brand_frame, fg_color="transparent")
+        row.pack(fill="x")
+
+        logo_img = load_ctk_image(44)
+        if logo_img is not None:
+            self._logo_label = ctk.CTkLabel(row, image=logo_img, text="")
+            self._logo_label.pack(side="left", padx=(0, 10))
+
+        text_col = ctk.CTkFrame(row, fg_color="transparent")
+        text_col.pack(side="left", fill="x", expand=True)
 
         ctk.CTkLabel(
-            brand_frame,
+            text_col,
             text="HireFlow",
-            font=("Segoe UI", 20, "bold"),
+            font=("Segoe UI", 18, "bold"),
             text_color=COLORS.text,
             anchor="w",
         ).pack(fill="x")
 
         ctk.CTkLabel(
-            brand_frame,
+            text_col,
             text="AI",
             font=("Segoe UI", 11, "bold"),
             text_color=COLORS.primary,
@@ -99,7 +112,7 @@ class Sidebar(ctk.CTkFrame):
             font=("Segoe UI", 9),
             text_color=COLORS.text_muted,
             anchor="w",
-        ).pack(fill="x", pady=(4, 0))
+        ).pack(fill="x", pady=(6, 0))
 
         # Separator below brand (own row 1).
         ctk.CTkFrame(self, height=1, fg_color=COLORS.border).grid(

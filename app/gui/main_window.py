@@ -18,6 +18,7 @@ from app.database.repositories import (
     JobRepository,
     ScrapeRunRepository,
 )
+from app.gui.branding import load_ctk_image, set_window_icon
 from app.gui.dashboard import Dashboard
 from app.gui.jobs_table import JobsTable
 from app.gui.settings_panel import SettingsPanel
@@ -57,6 +58,9 @@ class MainWindow(ctk.CTk):
         self.minsize(1100, 700)
         self.configure(fg_color=COLORS.bg)
         self.protocol("WM_DELETE_WINDOW", self._handle_close)
+
+        # Window / taskbar icon (multi-resolution .ico)
+        set_window_icon(self)
 
         # ---------------- Service wiring ----------------
         self._job_repo = JobRepository()
@@ -506,6 +510,11 @@ class MainWindow(ctk.CTk):
             border_width=1,
         )
         card.pack(fill="x", pady=8)
+
+        # Logo at the top of the About card
+        logo_img = load_ctk_image(128)
+        if logo_img is not None:
+            ctk.CTkLabel(card, image=logo_img, text="").pack(pady=(22, 6))
 
         text = (
             f"{settings.app_name} v{settings.app_version}\n"

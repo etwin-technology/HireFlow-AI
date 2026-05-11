@@ -162,21 +162,44 @@ docker compose up --build
 
 ## 🛠️  PyInstaller build (Windows .exe)
 
+A pre-configured PyInstaller spec ships with the project — works on **Windows 10 and 11** (x64).
+
+### Build it yourself
+
 ```powershell
-pip install pyinstaller
-pyinstaller --noconfirm --onefile --windowed `
-    --name "JobHunterPro" `
-    --add-data "app/gui/assets;app/gui/assets" `
-    --hidden-import "customtkinter" `
-    --hidden-import "playwright" `
-    launcher.py
+cd HireFlow-AI
+.venv\Scripts\activate
+
+# (optional) regenerate the logo / icon
+python tools\generate_logo.py
+
+# one-folder build — recommended
+pyinstaller HireFlow.spec --clean --noconfirm
+
+# …or via the convenience script (does both at once)
+.\tools\build_exe.ps1
 ```
 
-The resulting executable will be in `dist/JobHunterPro.exe`.
+Output: **`dist\HireFlow\HireFlow.exe`** — ship the entire `dist\HireFlow\`
+folder to end users (zip it up, or wrap with Inno Setup for a proper installer).
 
-> **Note:** Playwright browsers are not bundled by PyInstaller. Run
-> `python -m playwright install chromium` once on the target machine, or
-> point `PLAYWRIGHT_BROWSERS_PATH` at a pre-installed directory.
+### First run on the user's machine
+Playwright browsers are NOT bundled (would add 500 MB+). On first launch
+HireFlow works fully on the API-driven sources (RemoteOK, Arbeitnow, TheMuse,
+Jobicy, WeWorkRemotely). To unlock the Playwright-driven scrapers (LinkedIn,
+Indeed, WelcomeToTheJungle, Bayt), open a terminal once and run:
+
+```cmd
+python -m playwright install chromium
+```
+
+Or set `PLAYWRIGHT_BROWSERS_PATH` to a pre-staged Chromium directory before
+launching `HireFlow.exe`.
+
+### One-file build (single .exe, slower startup)
+Open `HireFlow.spec` — comment out the `COLLECT(...)` block and uncomment the
+one-file `EXE(...)` block at the bottom, then re-run the same `pyinstaller`
+command. Result: one self-extracting `HireFlow.exe` (~180 MB).
 
 ---
 
