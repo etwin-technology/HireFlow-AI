@@ -1,0 +1,2 @@
+# Alembic migrations directory (placeholder).
+# Auto-create tables are handled by Database.create_all().

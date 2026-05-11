@@ -1,0 +1,43 @@
+services:
+  jobhunter-api:
+    build: .
+    image: jobhunter-pro:latest
+    container_name: jobhunter-api
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      API_ENABLED: "true"
+      API_HOST: 0.0.0.0
+      API_PORT: "8765"
+      LOG_LEVEL: INFO
+      SCRAPER_HEADLESS: "true"
+      DATABASE_URL: sqlite:///data/jobhunter.db
+    ports:
+      - "8765:8765"
+    volumes:
+      - jobhunter_data:/app/data
+      - jobhunter_logs:/app/logs
+      - jobhunter_exports:/app/exports
+    command: ["python", "-m", "app.main", "--api"]
+
+  jobhunter-scheduler:
+    image: jobhunter-pro:latest
+    container_name: jobhunter-scheduler
+    restart: unless-stopped
+    depends_on:
+      - jobhunter-api
+    environment:
+      APP_ENV: production
+      SCHEDULER_ENABLED: "true"
+      SCRAPER_HEADLESS: "true"
+      DATABASE_URL: sqlite:///data/jobhunter.db
+    volumes:
+      - jobhunter_data:/app/data
+      - jobhunter_logs:/app/logs
+      - jobhunter_exports:/app/exports
+    command: ["python", "-m", "app.main", "--headless", "--keyword", "developer"]
+
+volumes:
+  jobhunter_data:
+  jobhunter_logs:
+  jobhunter_exports:
