@@ -92,20 +92,38 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 
 # ---------------------------------------------------------------------------
+# Native splash screen — shown by the PyInstaller bootloader IMMEDIATELY,
+# before any Python interpreter starts. The launcher closes it once the
+# main window is ready (see launcher.py).
+# ---------------------------------------------------------------------------
+splash = Splash(
+    "app/gui/assets/logo_256.png",
+    binaries=a.binaries,
+    datas=a.datas,
+    text_pos=(10, 280),
+    text_size=11,
+    text_color="white",
+    minify_script=True,
+    always_on_top=True,
+)
+
+
+# ---------------------------------------------------------------------------
 # Executable — one-FOLDER distribution (recommended).
 # Faster startup than one-file, easier to inspect / repair.
 # ---------------------------------------------------------------------------
 exe = EXE(
     pyz,
     a.scripts,
+    splash,                  # include splash in the bootloader
     [],
     exclude_binaries=True,
     name="HireFlow",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,            # set True if UPX is on PATH and you want compression
-    console=False,        # windowed app (no console)
+    upx=False,
+    console=True,            # DEBUG: see Python output during launch
     disable_windowed_traceback=False,
     icon="app/gui/assets/icon.ico",
     version=None,
@@ -113,6 +131,7 @@ exe = EXE(
 
 coll = COLLECT(
     exe,
+    splash.binaries,         # include splash binaries
     a.binaries,
     a.zipfiles,
     a.datas,
