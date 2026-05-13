@@ -32,19 +32,22 @@ datas += [("app/gui/assets", "app/gui/assets")]
 
 
 # ---------------------------------------------------------------------------
-# Bundle the Playwright Chromium browser, if it has been pre-downloaded to
-# ``build/ms-playwright/``. tools/build_exe.ps1 does this step before
-# invoking PyInstaller. Without it the .exe still works — the launcher will
-# download Chromium on first run — but bundling avoids a ~150 MB first-run
-# download for end users.
+# Bundle the Playwright Chromium browser into the dist (Windows + Linux).
 #
-# The bundle path is ``_internal/ms-playwright`` at runtime; the launcher
-# (launcher.py::_configure_playwright_paths) copies these files into a
-# writable per-user dir and sets PLAYWRIGHT_BROWSERS_PATH there.
+# On macOS we DELIBERATELY skip this: Playwright's macOS Chromium download
+# is a nested ``Chromium.app/`` — a code-signed .app bundle whose
+# ``*.framework/`` directories contain symlinks pointing back into
+# ``Versions/A/``. PyInstaller's COLLECT step cannot copy this layout
+# (follows the symlinks, breaks the code signature, exits non-zero), and
+# even if it succeeded, stuffing a signed .app inside another .app would
+# trip Gatekeeper at runtime. On macOS the launcher's first-run downloader
+# (launcher.py::_ensure_playwright_browsers) handles it instead — the same
+# code path that runs as a fallback on Windows when bundling was skipped.
 # ---------------------------------------------------------------------------
-_browsers_src = os.path.join(os.path.abspath(SPECPATH), "build", "ms-playwright")
-if os.path.isdir(_browsers_src):
-    datas += [(_browsers_src, "ms-playwright")]
+if not IS_MACOS:
+    _browsers_src = os.path.join(os.path.abspath(SPECPATH), "build", "ms-playwright")
+    if os.path.isdir(_browsers_src):
+        datas += [(_browsers_src, "ms-playwright")]
 
 
 # ---------------------------------------------------------------------------
@@ -197,12 +200,12 @@ if IS_MACOS:
         name="HireFlow.app",
         icon=icon_path,
         bundle_identifier="com.etwintechnology.hireflow",
-        version="1.1.1",
+        version="1.1.2",
         info_plist={
             "CFBundleName": "HireFlow AI",
             "CFBundleDisplayName": "HireFlow AI",
-            "CFBundleShortVersionString": "1.1.1",
-            "CFBundleVersion": "1.1.1",
+            "CFBundleShortVersionString": "1.1.2",
+            "CFBundleVersion": "1.1.2",
             "CFBundleIdentifier": "com.etwintechnology.hireflow",
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "11.0",

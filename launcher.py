@@ -154,6 +154,86 @@ def _configure_playwright_paths() -> None:
             pass
 
 
+class _FirstRunDialog:
+    """Minimal Tk modal shown while Playwright downloads its Chromium build.
+
+    The .app on macOS does not have a PyInstaller splash (Splash is
+    Windows/Linux only), so without this dialog the user would double-click
+    HireFlow.app and stare at a frozen Dock icon for two minutes during the
+    first-run download. The dialog is intentionally tiny and dependency-free
+    (stdlib tkinter only) so it can show BEFORE any heavy app imports run.
+    """
+
+    def __init__(self) -> None:
+        self._tk = None
+        self._label = None
+        self._bar = None
+
+    def open(self) -> None:
+        try:
+            import tkinter as tk
+            from tkinter import ttk
+        except Exception:  # noqa: BLE001
+            return
+
+        try:
+            root = tk.Tk()
+            root.title("HireFlow AI — First-time setup")
+            root.geometry("440x150")
+            root.resizable(False, False)
+            # Center on screen
+            root.update_idletasks()
+            sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+            x = (sw - 440) // 2
+            y = (sh - 150) // 2
+            root.geometry(f"440x150+{x}+{y}")
+
+            header = tk.Label(
+                root,
+                text="Setting up HireFlow AI",
+                font=("Helvetica", 14, "bold"),
+                pady=8,
+            )
+            header.pack()
+
+            self._label = tk.Label(
+                root,
+                text="Downloading browser engine (one-time, ≈150 MB)…",
+                font=("Helvetica", 10),
+                wraplength=400,
+            )
+            self._label.pack(pady=(4, 8))
+
+            self._bar = ttk.Progressbar(root, mode="indeterminate", length=380)
+            self._bar.pack(pady=(0, 10))
+            self._bar.start(12)
+
+            root.update()
+            self._tk = root
+        except Exception:  # noqa: BLE001
+            self._tk = None
+
+    def set_text(self, msg: str) -> None:
+        if self._tk is None or self._label is None:
+            return
+        try:
+            self._label.config(text=msg)
+            self._tk.update()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def close(self) -> None:
+        if self._tk is None:
+            return
+        try:
+            if self._bar is not None:
+                self._bar.stop()
+            self._tk.destroy()
+        except Exception:  # noqa: BLE001
+            pass
+        self._tk = None
+
+
 def _ensure_playwright_browsers() -> None:
     """Make sure Chromium is installed before any scraper tries to launch it.
 
@@ -168,35 +248,41 @@ def _ensure_playwright_browsers() -> None:
     if _chromium_present(PLAYWRIGHT_BROWSERS_DIR):
         return
 
+    # Splash works on Windows but not macOS; the Tk dialog covers both.
     _splash_update("Downloading browser engine (one-time, ~150 MB)…")
+    dialog = _FirstRunDialog()
+    dialog.open()
 
     try:
-        from playwright._impl._driver import compute_driver_executable
-    except Exception:  # noqa: BLE001
-        return
+        try:
+            from playwright._impl._driver import compute_driver_executable
+        except Exception:  # noqa: BLE001
+            return
 
-    try:
-        driver_executable, driver_cli = compute_driver_executable()
-    except Exception:  # noqa: BLE001
-        return
+        try:
+            driver_executable, driver_cli = compute_driver_executable()
+        except Exception:  # noqa: BLE001
+            return
 
-    env = os.environ.copy()
-    env["PLAYWRIGHT_BROWSERS_PATH"] = str(PLAYWRIGHT_BROWSERS_DIR)
+        env = os.environ.copy()
+        env["PLAYWRIGHT_BROWSERS_PATH"] = str(PLAYWRIGHT_BROWSERS_DIR)
 
-    try:
-        subprocess.run(
-            [driver_executable, driver_cli, "install", "chromium"],
-            env=env,
-            check=True,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        # Don't crash the app — surface the error in the crash log and let
-        # the scraper fail with a clearer message on first use.
-        _write_crash(
-            f"Playwright browser install failed: {exc!r}\n"
-            f"PLAYWRIGHT_BROWSERS_PATH={PLAYWRIGHT_BROWSERS_DIR}\n"
-        )
+        try:
+            subprocess.run(
+                [driver_executable, driver_cli, "install", "chromium"],
+                env=env,
+                check=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            # Don't crash the app — surface the error in the crash log and
+            # let the scraper fail with a clearer message on first use.
+            _write_crash(
+                f"Playwright browser install failed: {exc!r}\n"
+                f"PLAYWRIGHT_BROWSERS_PATH={PLAYWRIGHT_BROWSERS_DIR}\n"
+            )
+    finally:
+        dialog.close()
 
 
 def _write_crash(exc_text: str) -> Path:
