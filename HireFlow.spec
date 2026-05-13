@@ -79,9 +79,31 @@ hiddenimports = [
     "plyer.platforms.win.notification",
     "plyer.facades.notification",
     "PIL._tkinter_finder",
+    # GUI / asyncio plumbing PyInstaller's static analysis sometimes
+    # misses on Windows — without these the .exe boots but the main
+    # window never appears (silent NotImplementedError from asyncio,
+    # or a Tk_Init failure from a missing _tkinter helper).
+    "_tkinter",
+    "tkinter",
+    "tkinter.ttk",
+    "tkinter.font",
+    "tkinter.filedialog",
+    "tkinter.messagebox",
+    "tkinter.scrolledtext",
+    "asyncio",
+    "asyncio.windows_events",
+    "asyncio.windows_utils",
+    "asyncio.proactor_events",
+    "asyncio.selector_events",
+    "selectors",
+    "encodings.idna",
+    "encodings.utf_8",
+    "encodings.cp1252",
+    "PIL.ImageTk",
 ]
 hiddenimports += collect_submodules("pydantic")
 hiddenimports += collect_submodules("apscheduler")
+hiddenimports += collect_submodules("customtkinter")
 
 
 # ---------------------------------------------------------------------------
@@ -200,12 +222,12 @@ if IS_MACOS:
         name="HireFlow.app",
         icon=icon_path,
         bundle_identifier="com.etwintechnology.hireflow",
-        version="1.1.2",
+        version="1.1.3",
         info_plist={
             "CFBundleName": "HireFlow AI",
             "CFBundleDisplayName": "HireFlow AI",
-            "CFBundleShortVersionString": "1.1.2",
-            "CFBundleVersion": "1.1.2",
+            "CFBundleShortVersionString": "1.1.3",
+            "CFBundleVersion": "1.1.3",
             "CFBundleIdentifier": "com.etwintechnology.hireflow",
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "11.0",
