@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import multiprocessing
 import os
+import subprocess
 import sys
 import traceback
 from datetime import datetime
@@ -66,6 +67,136 @@ def _configure_frozen_paths() -> None:
     # Ensure the subdirectories exist before SQLAlchemy / Loguru open files.
     for sub in ("logs", "exports"):
         (USER_DATA_DIR / sub).mkdir(parents=True, exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Playwright browser bootstrap.
+#
+# Playwright stores its Chromium binary in either
+#   (a) the package's own ``.local-browsers`` folder (default for pip
+#       installs), OR
+#   (b) the directory pointed to by ``PLAYWRIGHT_BROWSERS_PATH``.
+#
+# When PyInstaller freezes the app the package folder is read-only and
+# usually missing the browser binaries — they're a separate ~150 MB download
+# triggered by ``playwright install``. Two problems follow:
+#   * The browsers may not have been bundled at build time.
+#   * Even if they were, when the .exe is run from a transient extraction
+#     dir (WinRAR self-extract, %TEMP%, Windows Defender sandbox, …) the
+#     paths shift and Playwright can't find them.
+#
+# Fix: pin ``PLAYWRIGHT_BROWSERS_PATH`` to a persistent per-user location,
+# prefer the bundled copy on first run, and fall back to downloading on
+# demand. Setting the env var BEFORE any ``playwright`` import is critical.
+# ---------------------------------------------------------------------------
+PLAYWRIGHT_BROWSERS_DIR = USER_DATA_DIR / "browsers"
+
+
+def _bundled_browsers_dir() -> Path | None:
+    """Return the bundled ms-playwright dir if it was shipped with the .exe."""
+    if not _is_frozen():
+        return None
+    base = getattr(sys, "_MEIPASS", None)
+    if not base:
+        return None
+    candidate = Path(base) / "ms-playwright"
+    return candidate if candidate.is_dir() else None
+
+
+def _chromium_present(browsers_dir: Path) -> bool:
+    """Heuristic check: is *some* Chromium build present under ``browsers_dir``?
+
+    We accept either ``chromium-*`` (full Chromium) or
+    ``chromium_headless_shell-*`` (the lighter headless build Playwright
+    1.45+ prefers for ``headless=True``).
+    """
+    if not browsers_dir.is_dir():
+        return False
+    for child in browsers_dir.iterdir():
+        name = child.name.lower()
+        if name.startswith("chromium-") or name.startswith("chromium_headless_shell-"):
+            return True
+    return False
+
+
+def _configure_playwright_paths() -> None:
+    """Point Playwright at a stable, writable browsers directory.
+
+    Strategy:
+      1. If the build bundled browsers into ``_MEIPASS/ms-playwright`` and the
+         user-data copy is empty, copy them once into the user-data dir.
+         Using the persistent location avoids re-extracting hundreds of MB on
+         every launch when the exe is run from a self-extracting archive.
+      2. Always export ``PLAYWRIGHT_BROWSERS_PATH`` to the user-data dir, so
+         all Playwright invocations look in the same place.
+    """
+    if not _is_frozen():
+        return
+
+    PLAYWRIGHT_BROWSERS_DIR.mkdir(parents=True, exist_ok=True)
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(PLAYWRIGHT_BROWSERS_DIR)
+
+    bundled = _bundled_browsers_dir()
+    if bundled is not None and not _chromium_present(PLAYWRIGHT_BROWSERS_DIR):
+        import shutil
+
+        try:
+            for item in bundled.iterdir():
+                dest = PLAYWRIGHT_BROWSERS_DIR / item.name
+                if dest.exists():
+                    continue
+                if item.is_dir():
+                    shutil.copytree(item, dest)
+                else:
+                    shutil.copy2(item, dest)
+        except OSError:
+            # Non-fatal: we'll try the network download path below.
+            pass
+
+
+def _ensure_playwright_browsers() -> None:
+    """Make sure Chromium is installed before any scraper tries to launch it.
+
+    Runs only when frozen AND the configured browsers dir is still empty
+    after the bundle-copy step. Triggers Playwright's own installer via the
+    driver's ``node`` binary, which is what ``python -m playwright install``
+    does under the hood — except we can't rely on ``python -m`` in a frozen
+    app because there is no separate interpreter on disk.
+    """
+    if not _is_frozen():
+        return
+    if _chromium_present(PLAYWRIGHT_BROWSERS_DIR):
+        return
+
+    _splash_update("Downloading browser engine (one-time, ~150 MB)…")
+
+    try:
+        from playwright._impl._driver import compute_driver_executable
+    except Exception:  # noqa: BLE001
+        return
+
+    try:
+        driver_executable, driver_cli = compute_driver_executable()
+    except Exception:  # noqa: BLE001
+        return
+
+    env = os.environ.copy()
+    env["PLAYWRIGHT_BROWSERS_PATH"] = str(PLAYWRIGHT_BROWSERS_DIR)
+
+    try:
+        subprocess.run(
+            [driver_executable, driver_cli, "install", "chromium"],
+            env=env,
+            check=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        # Don't crash the app — surface the error in the crash log and let
+        # the scraper fail with a clearer message on first use.
+        _write_crash(
+            f"Playwright browser install failed: {exc!r}\n"
+            f"PLAYWRIGHT_BROWSERS_PATH={PLAYWRIGHT_BROWSERS_DIR}\n"
+        )
 
 
 def _write_crash(exc_text: str) -> Path:
@@ -134,6 +265,8 @@ def main() -> None:
     multiprocessing.freeze_support()  # required for PyInstaller on Windows
     _splash_update("Preparing environment…")
     _configure_frozen_paths()
+    _configure_playwright_paths()
+    _ensure_playwright_browsers()
 
     try:
         _splash_update("Loading core libraries…")

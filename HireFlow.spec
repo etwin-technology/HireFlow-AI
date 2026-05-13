@@ -10,6 +10,8 @@
 # To make a single-file build instead, see the bottom of this file.
 
 # ruff: noqa
+import os
+
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
@@ -23,6 +25,22 @@ datas += collect_data_files("customtkinter")
 datas += collect_data_files("ttkbootstrap")
 datas += collect_data_files("fake_useragent")
 datas += [("app/gui/assets", "app/gui/assets")]
+
+
+# ---------------------------------------------------------------------------
+# Bundle the Playwright Chromium browser, if it has been pre-downloaded to
+# ``build/ms-playwright/``. tools/build_exe.ps1 does this step before
+# invoking PyInstaller. Without it the .exe still works — the launcher will
+# download Chromium on first run — but bundling avoids a ~150 MB first-run
+# download for end users.
+#
+# The bundle path is ``_internal/ms-playwright`` at runtime; the launcher
+# (launcher.py::_configure_playwright_paths) copies these files into a
+# writable per-user dir and sets PLAYWRIGHT_BROWSERS_PATH there.
+# ---------------------------------------------------------------------------
+_browsers_src = os.path.join(os.path.abspath(SPECPATH), "build", "ms-playwright")
+if os.path.isdir(_browsers_src):
+    datas += [(_browsers_src, "ms-playwright")]
 
 
 # ---------------------------------------------------------------------------
@@ -123,10 +141,10 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=True,            # DEBUG: see Python output during launch
+    console=False,           # production: no terminal window
     disable_windowed_traceback=False,
     icon="app/gui/assets/icon.ico",
-    version=None,
+    version="tools/version_info.txt",
 )
 
 coll = COLLECT(
