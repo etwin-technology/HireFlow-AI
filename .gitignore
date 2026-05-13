@@ -40,3 +40,7 @@ Thumbs.db
 # --- Playwright ---
 playwright-report/
 test-results/
+
+# --- Generated build assets (rebuilt by tools/generate_logo.py) ---
+app/gui/assets/icon.iconset/
+app/gui/assets/icon.icns

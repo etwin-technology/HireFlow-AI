@@ -7,11 +7,17 @@ Produces, under ``app/gui/assets/``:
   - logo_64.png     64×64
   - logo_32.png     32×32
   - icon.ico        Windows multi-resolution icon (16/24/32/48/64/128/256)
+  - icon.iconset/   macOS iconset folder (10 PNGs at Apple's required sizes)
 
 The design is a rounded-square tile with a blue→cyan vertical gradient,
 overlaid with a stylized "H" monogram and a small rising-arrow accent on
 the right pillar (symbolizing the "Flow" half of HireFlow). A tiny "AI"
 mark sits in the lower-right corner.
+
+The .iconset folder is consumed by ``iconutil -c icns icon.iconset`` on
+macOS to produce ``icon.icns`` (PyInstaller's BUNDLE step needs the
+.icns; we generate the .iconset on all platforms because the PNGs are
+portable, and the workflow runs iconutil on the macOS runner).
 
 Run from the project root:
     python tools/generate_logo.py
@@ -222,6 +228,32 @@ def generate() -> None:
     icon_path = ASSETS_DIR / "icon.ico"
     master.save(icon_path, format="ICO", sizes=icon_sizes)
     print(f"  wrote {icon_path.relative_to(PROJECT_ROOT)} (7 resolutions)")
+
+    # macOS .iconset folder — Apple expects these exact filenames + sizes.
+    # The CI workflow runs ``iconutil -c icns icon.iconset`` to bake it
+    # into the icon.icns that PyInstaller's BUNDLE step references.
+    iconset_dir = ASSETS_DIR / "icon.iconset"
+    iconset_dir.mkdir(exist_ok=True)
+    iconset_spec = [
+        ("icon_16x16.png", 16),
+        ("icon_16x16@2x.png", 32),
+        ("icon_32x32.png", 32),
+        ("icon_32x32@2x.png", 64),
+        ("icon_128x128.png", 128),
+        ("icon_128x128@2x.png", 256),
+        ("icon_256x256.png", 256),
+        ("icon_256x256@2x.png", 512),
+        ("icon_512x512.png", 512),
+        ("icon_512x512@2x.png", 1024),
+    ]
+    # Up-scale once to 1024 so the @2x renders cleanly; everything else
+    # is a Lanczos downscale from that master.
+    iconset_master = master.resize((1024, 1024), Image.LANCZOS)
+    for fname, px in iconset_spec:
+        iconset_master.resize((px, px), Image.LANCZOS).save(
+            iconset_dir / fname, "PNG", optimize=True
+        )
+    print(f"  wrote {iconset_dir.relative_to(PROJECT_ROOT)}/ ({len(iconset_spec)} PNGs)")
 
     print("Done.")
 

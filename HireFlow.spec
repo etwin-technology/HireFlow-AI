@@ -1,18 +1,24 @@
-# HireFlow AI — PyInstaller spec file
+# HireFlow AI — PyInstaller spec file (cross-platform)
 #
 # Build:
-#   .venv\Scripts\activate
-#   pyinstaller HireFlow.spec --clean --noconfirm
+#   Windows:   .venv\Scripts\activate ; pyinstaller HireFlow.spec --clean --noconfirm
+#   macOS:     source .venv/bin/activate ; pyinstaller HireFlow.spec --clean --noconfirm
 #
 # Output:
-#   dist\HireFlow\HireFlow.exe   (one-folder distribution)
-#
-# To make a single-file build instead, see the bottom of this file.
+#   Windows:   dist\HireFlow\HireFlow.exe   (one-folder distribution)
+#   macOS:     dist/HireFlow.app            (native .app bundle alongside dist/HireFlow/)
 
 # ruff: noqa
+import os
+import sys
+
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
+
+# Platform feature flags — used to gate Windows-only / macOS-only spec pieces.
+IS_WINDOWS = sys.platform.startswith("win")
+IS_MACOS = sys.platform == "darwin"
 
 
 # ---------------------------------------------------------------------------
@@ -23,6 +29,22 @@ datas += collect_data_files("customtkinter")
 datas += collect_data_files("ttkbootstrap")
 datas += collect_data_files("fake_useragent")
 datas += [("app/gui/assets", "app/gui/assets")]
+
+
+# ---------------------------------------------------------------------------
+# Bundle the Playwright Chromium browser, if it has been pre-downloaded to
+# ``build/ms-playwright/``. tools/build_exe.ps1 does this step before
+# invoking PyInstaller. Without it the .exe still works — the launcher will
+# download Chromium on first run — but bundling avoids a ~150 MB first-run
+# download for end users.
+#
+# The bundle path is ``_internal/ms-playwright`` at runtime; the launcher
+# (launcher.py::_configure_playwright_paths) copies these files into a
+# writable per-user dir and sets PLAYWRIGHT_BROWSERS_PATH there.
+# ---------------------------------------------------------------------------
+_browsers_src = os.path.join(os.path.abspath(SPECPATH), "build", "ms-playwright")
+if os.path.isdir(_browsers_src):
+    datas += [(_browsers_src, "ms-playwright")]
 
 
 # ---------------------------------------------------------------------------
@@ -95,46 +117,68 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 # Native splash screen — shown by the PyInstaller bootloader IMMEDIATELY,
 # before any Python interpreter starts. The launcher closes it once the
 # main window is ready (see launcher.py).
+#
+# Splash is Windows + Linux only — PyInstaller does NOT support it on macOS.
+# We skip it on Darwin and rely on the .app launching quickly enough that no
+# splash is needed.
 # ---------------------------------------------------------------------------
-splash = Splash(
-    "app/gui/assets/logo_256.png",
-    binaries=a.binaries,
-    datas=a.datas,
-    text_pos=(10, 280),
-    text_size=11,
-    text_color="white",
-    minify_script=True,
-    always_on_top=True,
-)
+splash = None
+if not IS_MACOS:
+    splash = Splash(
+        "app/gui/assets/logo_256.png",
+        binaries=a.binaries,
+        datas=a.datas,
+        text_pos=(10, 280),
+        text_size=11,
+        text_color="white",
+        minify_script=True,
+        always_on_top=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Per-platform icon + Windows-only version resource.
+# ---------------------------------------------------------------------------
+if IS_MACOS:
+    icon_path = "app/gui/assets/icon.icns"
+elif IS_WINDOWS:
+    icon_path = "app/gui/assets/icon.ico"
+else:
+    icon_path = "app/gui/assets/logo_256.png"
+
+version_resource = "tools/version_info.txt" if IS_WINDOWS else None
 
 
 # ---------------------------------------------------------------------------
 # Executable — one-FOLDER distribution (recommended).
 # Faster startup than one-file, easier to inspect / repair.
 # ---------------------------------------------------------------------------
+_exe_args = [pyz, a.scripts]
+if splash is not None:
+    _exe_args.append(splash)          # include splash in the bootloader
+_exe_args.append([])
+
 exe = EXE(
-    pyz,
-    a.scripts,
-    splash,                  # include splash in the bootloader
-    [],
+    *_exe_args,
     exclude_binaries=True,
     name="HireFlow",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=True,            # DEBUG: see Python output during launch
+    console=False,           # production: no terminal window
     disable_windowed_traceback=False,
-    icon="app/gui/assets/icon.ico",
-    version=None,
+    icon=icon_path,
+    version=version_resource,
 )
 
+_coll_args = [exe]
+if splash is not None:
+    _coll_args.append(splash.binaries)  # include splash binaries
+_coll_args += [a.binaries, a.zipfiles, a.datas]
+
 coll = COLLECT(
-    exe,
-    splash.binaries,         # include splash binaries
-    a.binaries,
-    a.zipfiles,
-    a.datas,
+    *_coll_args,
     strip=False,
     upx=False,
     upx_exclude=[],
@@ -143,22 +187,29 @@ coll = COLLECT(
 
 
 # ---------------------------------------------------------------------------
-# One-FILE alternative — uncomment if you want a single .exe instead.
-# (~150-200 MB; slower first launch because it extracts to %TEMP%.)
+# macOS .app bundle — wraps ``coll`` in the standard .app directory layout
+# (Contents/MacOS, Contents/Resources, Info.plist, etc). Without this step
+# you'd end up with a bare CLI binary that Finder can't double-click.
 # ---------------------------------------------------------------------------
-# exe = EXE(
-#     pyz,
-#     a.scripts,
-#     a.binaries,
-#     a.zipfiles,
-#     a.datas,
-#     [],
-#     name="HireFlow",
-#     debug=False,
-#     bootloader_ignore_signals=False,
-#     strip=False,
-#     upx=False,
-#     runtime_tmpdir=None,
-#     console=False,
-#     icon="app/gui/assets/icon.ico",
-# )
+if IS_MACOS:
+    app = BUNDLE(
+        coll,
+        name="HireFlow.app",
+        icon=icon_path,
+        bundle_identifier="com.etwintechnology.hireflow",
+        version="1.1.1",
+        info_plist={
+            "CFBundleName": "HireFlow AI",
+            "CFBundleDisplayName": "HireFlow AI",
+            "CFBundleShortVersionString": "1.1.1",
+            "CFBundleVersion": "1.1.1",
+            "CFBundleIdentifier": "com.etwintechnology.hireflow",
+            "NSHighResolutionCapable": True,
+            "LSMinimumSystemVersion": "11.0",
+            "LSApplicationCategoryType": "public.app-category.business",
+            "NSHumanReadableCopyright": "Copyright (c) Etwin Technology",
+            # We need network for scraping, and the user-data dir for the
+            # SQLite database + Playwright browser cache.
+            "NSAppTransportSecurity": {"NSAllowsArbitraryLoads": True},
+        },
+    )
