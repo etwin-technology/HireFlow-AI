@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     # ---------- Application ----------
     app_name: str = Field(default="HireFlow AI", alias="APP_NAME")
     app_vendor: str = Field(default="Etwin Technology", alias="APP_VENDOR")
-    app_version: str = Field(default="1.1.0", alias="APP_VERSION")
+    app_version: str = Field(default="1.1.1", alias="APP_VERSION")
     app_env: Literal["development", "production", "test"] = Field(
         default="production", alias="APP_ENV"
     )

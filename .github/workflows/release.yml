@@ -1,7 +1,8 @@
-name: Release Windows build
+name: Release build
 
 # Triggers on tags like v1.1.0, v2.0.0-rc1, etc.
-# A push of the tag is enough — no need for a separate manual step.
+# Builds Windows + macOS artifacts in parallel and attaches both to a
+# single GitHub release.
 on:
   push:
     tags:
@@ -9,10 +10,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # required for actions/create-release / softprops
+  contents: write  # required to create/update GitHub releases
 
 jobs:
+  # =========================================================================
+  # WINDOWS  →  HireFlow-<version>-windows-x64.zip
+  # =========================================================================
   build-windows:
+    name: Build Windows
     runs-on: windows-latest
     timeout-minutes: 30
 
@@ -33,8 +38,6 @@ jobs:
 
       - name: Stage Playwright Chromium into build/ms-playwright
         env:
-          # build_exe.ps1 also sets this, but doing it here lets the cache step
-          # (when we add one later) key off a stable path.
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}\build\ms-playwright
         run: |
           New-Item -ItemType Directory -Force -Path $env:PLAYWRIGHT_BROWSERS_PATH | Out-Null
@@ -59,21 +62,121 @@ jobs:
           "version=$clean" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Package dist as zip
+        id: package
         shell: pwsh
         run: |
-          $name = "HireFlow-${{ steps.version.outputs.version }}-win64.zip"
+          $name = "HireFlow-${{ steps.version.outputs.version }}-windows-x64.zip"
           Compress-Archive -Path "dist\HireFlow\*" -DestinationPath "dist\$name" -Force
           "asset=dist\$name" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-        id: package
 
-      - name: Upload build as workflow artifact
+      - name: Upload Windows build as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HireFlow-${{ steps.version.outputs.version }}-win64
+          name: HireFlow-${{ steps.version.outputs.version }}-windows-x64
           path: ${{ steps.package.outputs.asset }}
           if-no-files-found: error
 
-      - name: Publish GitHub release (tag pushes only)
+      - name: Publish to GitHub release (tag pushes only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: HireFlow AI ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          files: ${{ steps.package.outputs.asset }}
+
+  # =========================================================================
+  # macOS  →  HireFlow-<version>-macos-arm64.dmg
+  #
+  # Runs on macos-latest which is Apple Silicon (arm64). Intel Mac users
+  # would need a separate macos-13 job; if you need that, duplicate this
+  # block with runs-on: macos-13 and rename the artifact suffix to x64.
+  # =========================================================================
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Stage Playwright Chromium into build/ms-playwright
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/build/ms-playwright
+        run: |
+          mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
+          python -m playwright install chromium
+
+      - name: Regenerate logo assets (PNGs + iconset)
+        run: python tools/generate_logo.py
+
+      - name: Build icon.icns from icon.iconset
+        run: |
+          iconutil -c icns \
+            -o app/gui/assets/icon.icns \
+            app/gui/assets/icon.iconset
+          ls -la app/gui/assets/icon.icns
+
+      - name: Build the .app with PyInstaller
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/build/ms-playwright
+        run: pyinstaller HireFlow.spec --clean --noconfirm
+
+      - name: Resolve version from tag
+        id: version
+        run: |
+          tag="${{ github.ref_name }}"
+          if [ -z "$tag" ]; then tag="v0.0.0-dev"; fi
+          clean="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$clean" >> "$GITHUB_OUTPUT"
+
+      - name: Install create-dmg
+        # create-dmg produces the classic "drag .app to Applications" install
+        # screen — more polished than a raw hdiutil zip.
+        run: brew install create-dmg
+
+      - name: Build .dmg installer
+        id: package
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          dmg="HireFlow-${version}-macos-arm64.dmg"
+          # Some builds of create-dmg flake on the codesign step for unsigned
+          # apps — `|| true` lets us keep going; the .dmg is still produced.
+          create-dmg \
+            --volname "HireFlow AI ${version}" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "HireFlow.app" 175 190 \
+            --hide-extension "HireFlow.app" \
+            --app-drop-link 425 190 \
+            --no-internet-enable \
+            "dist/${dmg}" \
+            "dist/HireFlow.app" || true
+          ls -la "dist/${dmg}"
+          echo "asset=dist/${dmg}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload macOS build as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HireFlow-${{ steps.version.outputs.version }}-macos-arm64
+          path: ${{ steps.package.outputs.asset }}
+          if-no-files-found: error
+
+      - name: Publish to GitHub release (tag pushes only)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
