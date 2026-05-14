@@ -469,6 +469,16 @@ def main() -> None:
         _log_step("step: import app.main")
         from app.main import main as app_main
 
+        # CI smoke test: when HIREFLOW_SMOKE_TEST=1, exit cleanly here
+        # without entering the GUI mainloop. All imports + setup just
+        # ran successfully, which is the contract the test gates on —
+        # this would have caught the v1.1.2/v1.1.3 logger crash before
+        # the .dmg / .zip was ever published.
+        if os.environ.get("HIREFLOW_SMOKE_TEST") == "1":
+            _splash_close()
+            _log_step("SMOKE TEST: imports + setup OK, exiting 0")
+            sys.exit(0)
+
         _splash_update("Starting HireFlow AI…")
         _log_step("step: close splash + start GUI")
         _splash_close()
@@ -483,7 +493,11 @@ def main() -> None:
         exc_text = traceback.format_exc()
         _log_step(f"FATAL: {exc_text.splitlines()[-1] if exc_text.strip() else 'unknown'}")
         crash_path = _write_crash(exc_text)
-        _show_error_dialog(crash_path, exc_text)
+        # Skip the modal dialog under the CI smoke test — otherwise the
+        # workflow step would hang on a Tk/MessageBox that no one can
+        # click. The exit code below is what fails the CI gate.
+        if os.environ.get("HIREFLOW_SMOKE_TEST") != "1":
+            _show_error_dialog(crash_path, exc_text)
         sys.exit(1)
 
 

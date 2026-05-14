@@ -51,6 +51,41 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}\build\ms-playwright
         run: pyinstaller HireFlow.spec --clean --noconfirm
 
+      # ----------------------------------------------------------------
+      # Smoke-test gate: actually LAUNCH the built .exe and require it
+      # to exit 0. The launcher honors HIREFLOW_SMOKE_TEST=1 by running
+      # the entire startup chain (frozen-path setup, asyncio policy,
+      # Playwright path setup, GUI preflight imports, app.main import)
+      # then exiting before the GUI mainloop. Any startup crash (like
+      # the v1.1.2/v1.1.3 logger NoneType bug) fails this step and
+      # blocks the release from being published.
+      # ----------------------------------------------------------------
+      - name: Smoke-test the built .exe
+        timeout-minutes: 3
+        shell: pwsh
+        env:
+          HIREFLOW_SMOKE_TEST: "1"
+        run: |
+          $exe = ".\dist\HireFlow\HireFlow.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "Built executable not found at $exe"
+            exit 1
+          }
+          Write-Host "Launching $exe with HIREFLOW_SMOKE_TEST=1 ..."
+          $proc = Start-Process -FilePath $exe -Wait -PassThru
+          $code = $proc.ExitCode
+          Write-Host "Exit code: $code"
+          if ($code -ne 0) {
+            Write-Host "::group::crash.log"
+            $crashLog = Join-Path $env:LOCALAPPDATA "HireFlow-AI\crash.log"
+            if (Test-Path $crashLog) { Get-Content $crashLog }
+            else { Write-Host "(no crash.log at $crashLog)" }
+            Write-Host "::endgroup::"
+            Write-Error "HireFlow.exe failed smoke test (exit code $code)"
+            exit 1
+          }
+          Write-Host "OK: HireFlow.exe launched cleanly"
+
       - name: Resolve version from tag
         id: version
         shell: pwsh
@@ -133,6 +168,38 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/build/ms-playwright
         run: pyinstaller HireFlow.spec --clean --noconfirm
+
+      # ----------------------------------------------------------------
+      # Smoke-test gate: actually LAUNCH the built .app's binary and
+      # require it to exit 0. See the Windows job for the rationale.
+      # This is the only way to be sure the macOS bundle isn't broken
+      # without owning a Mac — the build succeeding is not enough.
+      # ----------------------------------------------------------------
+      - name: Smoke-test the built .app
+        timeout-minutes: 3
+        env:
+          HIREFLOW_SMOKE_TEST: "1"
+        run: |
+          set +e
+          bin="dist/HireFlow.app/Contents/MacOS/HireFlow"
+          if [ ! -x "$bin" ]; then
+            echo "::error::Built binary not found at $bin"
+            ls -la dist/HireFlow.app/Contents/MacOS/ || true
+            exit 1
+          fi
+          echo "Launching $bin with HIREFLOW_SMOKE_TEST=1 ..."
+          "$bin"
+          code=$?
+          echo "Exit code: $code"
+          if [ "$code" -ne 0 ]; then
+            echo "::group::crash.log"
+            crash="$HOME/Library/Application Support/HireFlow-AI/crash.log"
+            if [ -f "$crash" ]; then cat "$crash"; else echo "(no crash.log at $crash)"; fi
+            echo "::endgroup::"
+            echo "::error::HireFlow.app failed smoke test (exit code $code)"
+            exit 1
+          fi
+          echo "OK: HireFlow.app launched cleanly"
 
       - name: Resolve version from tag
         id: version
