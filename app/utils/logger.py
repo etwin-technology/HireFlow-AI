@@ -41,21 +41,32 @@ def setup_logging(
     # Wipe defaults so re-configuration is idempotent
     logger.remove()
 
-    console_format = (
-        "<green>{time:YYYY-MM-DD HH:mm:ss}</green> "
-        "| <level>{level: <8}</level> "
-        "| <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> "
-        "- <level>{message}</level>"
-    )
-    logger.add(
-        sys.stderr,
-        level=target_level,
-        format=console_format,
-        colorize=True,
-        backtrace=True,
-        diagnose=settings.debug,
-        enqueue=False,
-    )
+    # In a frozen windowed build (PyInstaller --windowed / --noconsole),
+    # sys.stderr and sys.stdout are None — passing them to logger.add()
+    # raises ``TypeError: Cannot log to objects of type 'NoneType'``.
+    console_stream = sys.stderr if sys.stderr is not None else sys.stdout
+    if console_stream is not None:
+        console_format = (
+            "<green>{time:YYYY-MM-DD HH:mm:ss}</green> "
+            "| <level>{level: <8}</level> "
+            "| <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> "
+            "- <level>{message}</level>"
+        )
+        logger.add(
+            console_stream,
+            level=target_level,
+            format=console_format,
+            colorize=True,
+            backtrace=True,
+            diagnose=settings.debug,
+            enqueue=False,
+        )
+
+    # Make sure the log directory exists before loguru opens the file.
+    try:
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
 
     file_format = (
         "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | "

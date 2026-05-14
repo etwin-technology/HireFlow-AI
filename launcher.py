@@ -365,7 +365,13 @@ def _show_error_dialog(crash_path: Path, exc_text: str) -> None:
         except Exception:  # noqa: BLE001
             pass
     except Exception:  # noqa: BLE001
-        sys.stderr.write(exc_text)
+        # Last resort — write to stderr if it exists (frozen --windowed
+        # builds set sys.stderr to None, so guard the access).
+        if sys.stderr is not None:
+            try:
+                sys.stderr.write(exc_text)
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def _configure_asyncio_policy() -> None:
