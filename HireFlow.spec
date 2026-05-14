@@ -29,6 +29,10 @@ datas += collect_data_files("customtkinter")
 datas += collect_data_files("ttkbootstrap")
 datas += collect_data_files("fake_useragent")
 datas += [("app/gui/assets", "app/gui/assets")]
+# Bundle the PWA frontend so the API server inside the .exe can serve
+# it when the user enables API_ENABLED=true. Resolved at runtime via
+# sys._MEIPASS + "app/web" in app.api.main._web_root_path().
+datas += [("app/web", "app/web")]
 
 
 # ---------------------------------------------------------------------------
@@ -222,12 +226,12 @@ if IS_MACOS:
         name="HireFlow.app",
         icon=icon_path,
         bundle_identifier="com.etwintechnology.hireflow",
-        version="1.1.5",
+        version="1.2.0",
         info_plist={
             "CFBundleName": "HireFlow AI",
             "CFBundleDisplayName": "HireFlow AI",
-            "CFBundleShortVersionString": "1.1.5",
-            "CFBundleVersion": "1.1.5",
+            "CFBundleShortVersionString": "1.2.0",
+            "CFBundleVersion": "1.2.0",
             "CFBundleIdentifier": "com.etwintechnology.hireflow",
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "11.0",

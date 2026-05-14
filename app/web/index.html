@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="HireFlow" />
+  <meta name="mobile-web-app-capable" content="yes" />
+
+  <title>HireFlow AI</title>
+
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icons/icon-192.png" type="image/png" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <link rel="stylesheet" href="/css/style.css" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50:  '#eff6ff',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+            },
+          },
+        },
+      },
+    };
+  </script>
+</head>
+
+<body class="bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+  <div
+    x-data="hireflowApp()"
+    x-init="init()"
+    class="flex flex-col h-screen max-w-2xl mx-auto bg-white dark:bg-slate-900 shadow-xl"
+  >
+    <!-- ============================================================
+         HEADER
+         ============================================================ -->
+    <header class="sticky top-0 z-20 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 pt-[max(env(safe-area-inset-top),0.75rem)] pb-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <img src="/icons/icon-192.png" alt="" class="w-8 h-8 rounded-lg" />
+          <h1 class="text-lg font-semibold tracking-tight" x-text="viewTitle()"></h1>
+        </div>
+        <button
+          @click="toggleDark()"
+          class="text-slate-500 dark:text-slate-300 hover:text-brand-600 p-2 -m-2"
+          aria-label="Toggle dark mode"
+        >
+          <span x-show="!dark">🌙</span>
+          <span x-show="dark">☀️</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- ============================================================
+         CONTENT
+         ============================================================ -->
+    <main class="flex-1 overflow-y-auto pb-24">
+
+      <!-- ---------- JOBS LIST ---------- -->
+      <section x-show="view === 'jobs'" x-transition.opacity>
+        <!-- Search + filters -->
+        <div class="px-4 py-3 space-y-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
+          <div class="relative">
+            <input
+              type="search"
+              x-model.debounce.400ms="filters.keyword"
+              @input="reloadJobs()"
+              placeholder="Search jobs (e.g. Python, designer)"
+              class="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+          </div>
+
+          <div class="flex gap-2 overflow-x-auto -mx-1 px-1 pb-1">
+            <button
+              @click="filters.remote_only = !filters.remote_only; reloadJobs()"
+              :class="filters.remote_only ? 'bg-brand-600 text-white' : 'bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300'"
+              class="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium"
+            >
+              Remote only
+            </button>
+            <select
+              x-model="filters.country"
+              @change="reloadJobs()"
+              class="shrink-0 px-3 py-1.5 rounded-full text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700"
+            >
+              <option value="">All countries</option>
+              <template x-for="(code, name) in countries" :key="code">
+                <option :value="code" x-text="name"></option>
+              </template>
+            </select>
+            <select
+              x-model="filters.source"
+              @change="reloadJobs()"
+              class="shrink-0 px-3 py-1.5 rounded-full text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700"
+            >
+              <option value="">All sources</option>
+              <template x-for="s in sources" :key="s">
+                <option :value="s" x-text="s"></option>
+              </template>
+            </select>
+          </div>
+        </div>
+
+        <!-- States -->
+        <div x-show="loading && jobs.length === 0" class="py-10 text-center text-slate-500 text-sm">
+          Loading jobs…
+        </div>
+        <div x-show="!loading && jobs.length === 0" class="py-16 text-center text-slate-500">
+          <div class="text-4xl mb-2">📭</div>
+          <div class="text-sm">No jobs match your filters yet.</div>
+          <button @click="view='scrape'" class="mt-4 inline-flex items-center gap-1.5 text-brand-600 dark:text-brand-500 text-sm font-medium">
+            Start a scrape →
+          </button>
+        </div>
+
+        <!-- List -->
+        <ul class="divide-y divide-slate-200 dark:divide-slate-800">
+          <template x-for="job in jobs" :key="job.id">
+            <li>
+              <button
+                @click="openJob(job)"
+                class="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 active:bg-slate-100 dark:active:bg-slate-800 transition"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0 flex-1">
+                    <div class="font-semibold truncate" x-text="job.title"></div>
+                    <div class="text-sm text-slate-600 dark:text-slate-400 truncate" x-text="job.company"></div>
+                    <div class="mt-1 flex items-center gap-1.5 text-xs text-slate-500 flex-wrap">
+                      <span x-show="job.location" x-text="job.location"></span>
+                      <span x-show="job.remote" class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 font-medium">Remote</span>
+                      <span x-show="job.salary" x-text="job.salary" class="text-amber-700 dark:text-amber-400"></span>
+                    </div>
+                  </div>
+                  <span class="shrink-0 text-[10px] uppercase tracking-wider text-slate-400" x-text="job.source"></span>
+                </div>
+              </button>
+            </li>
+          </template>
+        </ul>
+
+        <button
+          x-show="jobs.length > 0 && hasMore"
+          @click="loadMoreJobs()"
+          :disabled="loading"
+          class="w-full py-4 text-sm font-medium text-brand-600 dark:text-brand-500 disabled:opacity-50"
+        >
+          <span x-show="!loading">Load more</span>
+          <span x-show="loading">Loading…</span>
+        </button>
+      </section>
+
+      <!-- ---------- JOB DETAIL ---------- -->
+      <section x-show="view === 'detail' && selectedJob" x-transition.opacity class="p-4 space-y-4">
+        <button @click="view='jobs'" class="text-sm text-brand-600 dark:text-brand-500 -ml-1">← Back</button>
+        <template x-if="selectedJob">
+          <div class="space-y-3">
+            <h2 class="text-2xl font-bold leading-tight" x-text="selectedJob.title"></h2>
+            <div class="text-lg text-slate-700 dark:text-slate-300" x-text="selectedJob.company"></div>
+            <div class="flex flex-wrap gap-1.5">
+              <span x-show="selectedJob.location" class="px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-xs" x-text="selectedJob.location"></span>
+              <span x-show="selectedJob.country" class="px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-xs" x-text="selectedJob.country"></span>
+              <span x-show="selectedJob.remote" class="px-2 py-1 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-xs font-medium">Remote</span>
+              <span x-show="selectedJob.job_type" class="px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-xs" x-text="selectedJob.job_type"></span>
+              <span x-show="selectedJob.experience_level" class="px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-xs" x-text="selectedJob.experience_level"></span>
+            </div>
+            <div x-show="selectedJob.salary" class="text-amber-700 dark:text-amber-400 font-medium" x-text="selectedJob.salary"></div>
+            <div class="text-xs text-slate-500" x-text="`Source: ${selectedJob.source} · Scraped ${formatDate(selectedJob.scraped_at)}`"></div>
+            <a
+              :href="selectedJob.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="block w-full text-center bg-brand-600 hover:bg-brand-700 text-white font-medium py-3 rounded-xl"
+            >
+              Open original posting ↗
+            </a>
+          </div>
+        </template>
+      </section>
+
+      <!-- ---------- STATS ---------- -->
+      <section x-show="view === 'stats'" x-transition.opacity class="p-4 space-y-4">
+        <div x-show="!stats" class="py-10 text-center text-slate-500 text-sm">Loading stats…</div>
+        <template x-if="stats">
+          <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-3">
+              <div class="rounded-xl bg-slate-50 dark:bg-slate-800 p-4">
+                <div class="text-xs uppercase tracking-wider text-slate-500">Total jobs</div>
+                <div class="text-3xl font-bold mt-1" x-text="stats.summary?.total_jobs ?? 0"></div>
+              </div>
+              <div class="rounded-xl bg-slate-50 dark:bg-slate-800 p-4">
+                <div class="text-xs uppercase tracking-wider text-slate-500">Remote</div>
+                <div class="text-3xl font-bold mt-1" x-text="stats.summary?.remote_jobs ?? 0"></div>
+              </div>
+              <div class="rounded-xl bg-slate-50 dark:bg-slate-800 p-4">
+                <div class="text-xs uppercase tracking-wider text-slate-500">Companies</div>
+                <div class="text-3xl font-bold mt-1" x-text="stats.summary?.unique_companies ?? 0"></div>
+              </div>
+              <div class="rounded-xl bg-slate-50 dark:bg-slate-800 p-4">
+                <div class="text-xs uppercase tracking-wider text-slate-500">Sources</div>
+                <div class="text-3xl font-bold mt-1" x-text="Object.keys(stats.per_source || {}).length"></div>
+              </div>
+            </div>
+
+            <div>
+              <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">Top sources</h3>
+              <div class="space-y-1.5">
+                <template x-for="[name, count] in topEntries(stats.per_source)" :key="name">
+                  <div class="flex items-center gap-3">
+                    <div class="w-28 text-sm truncate" x-text="name"></div>
+                    <div class="flex-1 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                      <div class="h-full bg-brand-500 rounded-full" :style="`width: ${barPct(stats.per_source, count)}%`"></div>
+                    </div>
+                    <div class="text-sm w-12 text-right text-slate-500" x-text="count"></div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <div>
+              <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">Top countries</h3>
+              <div class="space-y-1.5">
+                <template x-for="[name, count] in topEntries(stats.per_country)" :key="name">
+                  <div class="flex items-center gap-3">
+                    <div class="w-28 text-sm truncate" x-text="name"></div>
+                    <div class="flex-1 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                      <div class="h-full bg-emerald-500 rounded-full" :style="`width: ${barPct(stats.per_country, count)}%`"></div>
+                    </div>
+                    <div class="text-sm w-12 text-right text-slate-500" x-text="count"></div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <div>
+              <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">Top companies</h3>
+              <ul class="space-y-1.5 text-sm">
+                <template x-for="(c, idx) in (stats.top_companies || []).slice(0, 10)" :key="idx">
+                  <li class="flex justify-between">
+                    <span class="truncate pr-3" x-text="c.company || c[0]"></span>
+                    <span class="text-slate-500 shrink-0" x-text="c.count ?? c[1]"></span>
+                  </li>
+                </template>
+              </ul>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <!-- ---------- SCRAPE ---------- -->
+      <section x-show="view === 'scrape'" x-transition.opacity class="p-4 space-y-4">
+        <form @submit.prevent="startScrape()" class="space-y-3">
+          <label class="block">
+            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Keyword</span>
+            <input
+              type="text"
+              x-model="scrapeForm.keyword"
+              required
+              minlength="2"
+              maxlength="120"
+              placeholder="developer, designer, marketing…"
+              class="mt-1 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </label>
+
+          <label class="block">
+            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Country</span>
+            <select x-model="scrapeForm.country" class="mt-1 block w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm">
+              <option value="">Any</option>
+              <template x-for="(code, name) in countries" :key="code">
+                <option :value="code" x-text="name"></option>
+              </template>
+            </select>
+          </label>
+
+          <label class="flex items-center gap-2">
+            <input type="checkbox" x-model="scrapeForm.remote_only" class="rounded" />
+            <span class="text-sm">Remote only</span>
+          </label>
+
+          <div>
+            <span class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Sources <span class="text-slate-400">(leave empty to use all)</span></span>
+            <div class="flex flex-wrap gap-1.5">
+              <template x-for="s in sources" :key="s">
+                <label
+                  :class="scrapeForm.sources.includes(s) ? 'bg-brand-600 text-white border-brand-600' : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700'"
+                  class="px-2.5 py-1 rounded-full text-xs border cursor-pointer select-none"
+                >
+                  <input type="checkbox" :value="s" x-model="scrapeForm.sources" class="hidden" />
+                  <span x-text="s"></span>
+                </label>
+              </template>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            :disabled="scrapeRunning"
+            class="w-full bg-brand-600 hover:bg-brand-700 disabled:bg-slate-400 text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2"
+          >
+            <span x-show="!scrapeRunning">Start scrape</span>
+            <span x-show="scrapeRunning" class="flex items-center gap-2">
+              <span class="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+              Scraping… (polling)
+            </span>
+          </button>
+        </form>
+
+        <div x-show="scrapeMessage" :class="scrapeError ? 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400' : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'" class="rounded-xl p-3 text-sm" x-text="scrapeMessage"></div>
+      </section>
+    </main>
+
+    <!-- ============================================================
+         BOTTOM NAV
+         ============================================================ -->
+    <nav class="sticky bottom-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-slate-200 dark:border-slate-800 pb-[max(env(safe-area-inset-bottom),0.25rem)]">
+      <div class="flex justify-around py-2">
+        <button
+          @click="view = 'jobs'"
+          :class="['jobs','detail'].includes(view) ? 'text-brand-600 dark:text-brand-500' : 'text-slate-500'"
+          class="flex flex-col items-center gap-0.5 px-3 py-1.5 text-xs"
+        >
+          <span class="text-xl">📋</span>
+          <span>Jobs</span>
+        </button>
+        <button
+          @click="view = 'stats'; loadStats()"
+          :class="view === 'stats' ? 'text-brand-600 dark:text-brand-500' : 'text-slate-500'"
+          class="flex flex-col items-center gap-0.5 px-3 py-1.5 text-xs"
+        >
+          <span class="text-xl">📊</span>
+          <span>Stats</span>
+        </button>
+        <button
+          @click="view = 'scrape'"
+          :class="view === 'scrape' ? 'text-brand-600 dark:text-brand-500' : 'text-slate-500'"
+          class="flex flex-col items-center gap-0.5 px-3 py-1.5 text-xs"
+        >
+          <span class="text-xl">🔍</span>
+          <span>Scrape</span>
+        </button>
+      </div>
+    </nav>
+  </div>
+
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

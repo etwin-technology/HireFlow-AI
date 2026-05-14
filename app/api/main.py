@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import threading
+from pathlib import Path
 from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
-from app.core.constants import JOB_SOURCES
+from app.core.constants import COUNTRIES, JOB_SOURCES
 from app.database.db import init_database
 from app.database.repositories import (
     ExportRepository,
@@ -99,17 +102,27 @@ def create_app() -> FastAPI:
     scraper = ScrapingService(job_repo=job_repo, run_repo=run_repo)
 
     # --------------------- Routes ---------------------
-    @app.get("/", tags=["meta"])
-    def root() -> dict:
+    # NOTE: the root path "/" used to return JSON metadata. It now serves
+    # the PWA's index.html (see StaticFiles mount below). The metadata
+    # route moved to /api so it stays discoverable.
+    @app.get("/api", tags=["meta"])
+    def api_root() -> dict:
         return {
             "app": settings.app_name,
             "version": settings.app_version,
-            "endpoints": ["/jobs", "/stats", "/scrape", "/export", "/sources"],
+            "endpoints": [
+                "/jobs", "/jobs/{id}", "/stats", "/scrape", "/scrape/status",
+                "/scrape/cancel", "/export", "/sources", "/countries",
+            ],
         }
 
     @app.get("/sources", tags=["meta"])
     def list_sources() -> dict:
         return {"sources": JOB_SOURCES}
+
+    @app.get("/countries", tags=["meta"])
+    def list_countries() -> dict:
+        return {"countries": COUNTRIES}
 
     @app.get("/jobs", response_model=list[JobOut], tags=["jobs"])
     def list_jobs(
@@ -198,7 +211,43 @@ def create_app() -> FastAPI:
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # ------------------------------------------------------------------
+    # PWA static files. Mounted LAST so registered API routes above
+    # always win — only paths not matched by an API route (/, /index.html,
+    # /manifest.webmanifest, /sw.js, /js/*, /css/*, /icons/*) fall through
+    # to the StaticFiles handler.
+    # ------------------------------------------------------------------
+    web_root = _web_root_path()
+    if web_root.is_dir():
+        app.mount(
+            "/",
+            StaticFiles(directory=str(web_root), html=True),
+            name="web",
+        )
+    else:
+        logger.warning(
+            "PWA web root not found at {p}; the API will run without a "
+            "frontend. Build the app/web/ tree to enable it.",
+            p=str(web_root),
+        )
+
     return app
+
+
+def _web_root_path() -> Path:
+    """Return the absolute path to the PWA static files.
+
+    Resolves both for a normal install (``app/web/`` next to ``app/api/``)
+    and for a PyInstaller-frozen build where data files live under
+    ``sys._MEIPASS/app/web``.
+    """
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidate = Path(meipass) / "app" / "web"
+        if candidate.is_dir():
+            return candidate
+    # Repo layout: app/api/main.py -> app/web/
+    return Path(__file__).resolve().parent.parent / "web"
 
 
 # ---------------------------------------------------------------------------
